@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -48,7 +49,12 @@ func NewTerminfoScreen() (Screen, error) {
 		}
 		terminfo.AddTerminfo(ti)
 	}
-	t := &tScreen{ti: ti}
+	return NewTerminfoScreenTodo(ti, &termiosPrivate{})
+}
+
+// nothing to see here
+func NewTerminfoScreenTodo(ti *terminfo.Terminfo, p Platform) (Screen, error) {
+	t := &tScreen{ti: ti, platform: p}
 
 	t.keyexist = make(map[Key]bool)
 	t.keycodes = make(map[string]*tKeyCode)
@@ -66,6 +72,13 @@ func NewTerminfoScreen() (Screen, error) {
 	return t, nil
 }
 
+// likewise
+type Platform interface {
+	Init(cb CellBuffer, sigwinch chan<- os.Signal, ti *terminfo.Terminfo) (io.Reader, io.Writer, error)
+	Fini()
+	GetWinSize() (int, int, error)
+}
+
 // tKeyCode represents a combination of a key code and modifiers.
 type tKeyCode struct {
 	key Key
@@ -79,8 +92,8 @@ type tScreen struct {
 	w         int
 	fini      bool
 	cells     CellBuffer
-	in        *os.File
-	out       *os.File
+	in        io.Reader
+	out       io.Writer
 	buffering bool // true if we are collecting writes to buf instead of sending directly to out
 	buf       bytes.Buffer
 	curstyle  Style
@@ -100,7 +113,7 @@ type tScreen struct {
 	clear     bool
 	cursorx   int
 	cursory   int
-	tiosp     *termiosPrivate
+	platform  Platform
 	wasbtn    bool
 	acs       map[rune]string
 	charset   string
@@ -141,7 +154,8 @@ func (t *tScreen) Init() error {
 	if i, _ := strconv.Atoi(os.Getenv("COLUMNS")); i != 0 {
 		w = i
 	}
-	if e := t.termioInit(); e != nil {
+	var e error
+	if t.in, t.out, e = t.platform.Init(t.cells, t.sigwinch, t.ti); e != nil {
 		return e
 	}
 
@@ -414,7 +428,10 @@ func (t *tScreen) Fini() {
 		close(t.quit)
 	}
 
-	t.termioFini()
+	signal.Stop(t.sigwinch)
+	<-t.indoneq
+
+	t.platform.Fini()
 }
 
 func (t *tScreen) SetStyle(style Style) {
@@ -766,7 +783,7 @@ func (t *tScreen) Size() (int, int) {
 }
 
 func (t *tScreen) resize() {
-	if w, h, e := t.getWinSize(); e == nil {
+	if w, h, e := t.platform.GetWinSize(); e == nil {
 		if w != t.w || h != t.h {
 			t.cx = -1
 			t.cy = -1

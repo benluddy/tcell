@@ -32,21 +32,27 @@ package tcell
 // a long time (probably forever) so holding one's breath is contraindicated.
 
 import (
+	"github.com/gdamore/tcell/terminfo"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 	"unsafe"
 )
 
-type termiosPrivate syscall.Termios
+type termiosPrivate struct {
+	tio *syscall.Termios
+	in  *os.File
+	out *os.File
+}
 
-func (t *tScreen) termioInit() error {
+func (t *termiosPrivate) Init(cb CellBuffer, sigwinch chan<- os.Signal, _ *terminfo.Terminfo) (io.Reader, io.Writer, error) {
 	var e error
-	var newtios termiosPrivate
+	var newtios syscall.Termios
 	var fd uintptr
 	var tios uintptr
 	var ioc uintptr
-	t.tiosp = &termiosPrivate{}
+	t.tio = &syscall.Termios{}
 
 	if t.in, e = os.OpenFile("/dev/tty", os.O_RDONLY, 0); e != nil {
 		goto failed
@@ -55,7 +61,7 @@ func (t *tScreen) termioInit() error {
 		goto failed
 	}
 
-	tios = uintptr(unsafe.Pointer(t.tiosp))
+	tios = uintptr(unsafe.Pointer(t.tio))
 	ioc = uintptr(syscall.TIOCGETA)
 	fd = uintptr(t.out.Fd())
 	if _, _, e1 := syscall.Syscall6(syscall.SYS_IOCTL, fd, ioc, tios, 0, 0, 0); e1 != 0 {
@@ -63,7 +69,7 @@ func (t *tScreen) termioInit() error {
 		goto failed
 	}
 
-	newtios = *t.tiosp
+	newtios = *t.tio
 	newtios.Iflag &^= syscall.IGNBRK | syscall.BRKINT | syscall.PARMRK |
 		syscall.ISTRIP | syscall.INLCR | syscall.IGNCR |
 		syscall.ICRNL | syscall.IXON
@@ -81,13 +87,13 @@ func (t *tScreen) termioInit() error {
 		goto failed
 	}
 
-	signal.Notify(t.sigwinch, syscall.SIGWINCH)
+	signal.Notify(sigwinch, syscall.SIGWINCH)
 
-	if w, h, e := t.getWinSize(); e == nil && w != 0 && h != 0 {
-		t.cells.Resize(w, h)
+	if w, h, e := t.GetWinSize(); e == nil && w != 0 && h != 0 {
+		cb.Resize(w, h)
 	}
 
-	return nil
+	return t.in, t.out, nil
 
 failed:
 	if t.in != nil {
@@ -96,19 +102,14 @@ failed:
 	if t.out != nil {
 		t.out.Close()
 	}
-	return e
+	return nil, nil, e
 }
 
-func (t *tScreen) termioFini() {
-
-	signal.Stop(t.sigwinch)
-
-	<-t.indoneq
-
+func (t *termiosPrivate) Fini() {
 	if t.out != nil {
 		fd := uintptr(t.out.Fd())
 		ioc := uintptr(syscall.TIOCSETAF)
-		tios := uintptr(unsafe.Pointer(t.tiosp))
+		tios := uintptr(unsafe.Pointer(t.tio))
 		syscall.Syscall6(syscall.SYS_IOCTL, fd, ioc, tios, 0, 0, 0)
 		t.out.Close()
 	}
@@ -123,7 +124,7 @@ func (t *tScreen) termioFini() {
 	}()
 }
 
-func (t *tScreen) getWinSize() (int, int, error) {
+func (t *termiosPrivate) GetWinSize() (int, int, error) {
 
 	fd := uintptr(t.out.Fd())
 	dim := [4]uint16{}

@@ -16,25 +16,27 @@
 
 package tcell
 
+import (
+	"github.com/gdamore/tcell/terminfo"
+	"io"
+	"os"
+)
+
 // On Windows we don't have support for termios.  We probably could, and
 // may should, in a cygwin type environment.  Its not clear how to make
 // this all work nicely with both cygwin and Windows console, so we
 // decline to do so here.
 
-func (t *tScreen) termioInit() error {
-	return ErrNoScreen
+func (t *termiosPrivate) Init(cb CellBuffer, sigwinch chan<- os.Signal, _ *terminfo.Terminfo) (io.Reader, io.Writer, error) {
+	return nil, nil, ErrNoScreen
 }
 
-func (t *tScreen) termioFini() {
+func (t *termiosPrivate) Fini() {
 	return
 }
 
-func (t *tScreen) getWinSize() (int, int, error) {
+func (t *termiosPrivate) GetWinSize() (int, int, error) {
 	return 0, 0, ErrNoScreen
-}
-
-func (t *tScreen) getCharset() string {
-	return "UTF-16LE"
 }
 
 type termiosPrivate struct{}

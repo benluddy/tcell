@@ -1,4 +1,4 @@
-// +build nacl plan9
+// +build nacl plan9 js
 
 // Copyright 2015 The TCell Authors
 //
@@ -16,17 +16,23 @@
 
 package tcell
 
+import (
+	"github.com/gdamore/tcell/terminfo"
+	"io"
+	"os"
+)
+
 // This stub file is for systems that have no termios.
 
 type termiosPrivate struct{}
 
-func (t *tScreen) termioInit() error {
-	return ErrNoScreen
+func (t *termiosPrivate) Init(cb CellBuffer, sigwinch chan<- os.Signal, _ *terminfo.Terminfo) (io.Reader, io.Writer, error) {
+	return nil, nil, ErrNoScreen
 }
 
-func (t *tScreen) termioFini() {
+func (t *termiosPrivate) Fini() {
 }
 
-func (t *tScreen) getWinSize() (int, int, error) {
+func (t *termiosPrivate) GetWinSize() (int, int, error) {
 	return 0, 0, ErrNoScreen
 }

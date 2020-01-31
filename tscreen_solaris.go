@@ -17,21 +17,24 @@
 package tcell
 
 import (
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/gdamore/tcell/terminfo"
 	"golang.org/x/sys/unix"
 )
 
 type termiosPrivate struct {
 	tio *unix.Termios
+	in  *os.File
+	out *os.File
 }
 
-func (t *tScreen) termioInit() error {
+func (t *termiosPrivate) Init(cb CellBuffer, sigwinch chan<- os.Signal, _ *terminfo.Terminfo) (io.Reader, io.Writer, error) {
 	var e error
 	var raw *unix.Termios
-	var tio *unix.Termios
 
 	if t.in, e = os.OpenFile("/dev/tty", os.O_RDONLY, 0); e != nil {
 		goto failed
@@ -40,20 +43,18 @@ func (t *tScreen) termioInit() error {
 		goto failed
 	}
 
-	tio, e = unix.IoctlGetTermios(int(t.out.Fd()), unix.TCGETS)
+	t.tio, e = unix.IoctlGetTermios(int(t.out.Fd()), unix.TCGETS)
 	if e != nil {
 		goto failed
 	}
 
-	t.tiosp = &termiosPrivate{tio: tio}
-
 	// make a local copy, to make it raw
 	raw = &unix.Termios{
-		Cflag: tio.Cflag,
-		Oflag: tio.Oflag,
-		Iflag: tio.Iflag,
-		Lflag: tio.Lflag,
-		Cc:    tio.Cc,
+		Cflag: t.tio.Cflag,
+		Oflag: t.tio.Oflag,
+		Iflag: t.tio.Iflag,
+		Lflag: t.tio.Lflag,
+		Cc:    t.tio.Cc,
 	}
 
 	raw.Iflag &^= (unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.INLCR |
@@ -75,13 +76,13 @@ func (t *tScreen) termioInit() error {
 		goto failed
 	}
 
-	signal.Notify(t.sigwinch, syscall.SIGWINCH)
+	signal.Notify(sigwinch, syscall.SIGWINCH)
 
-	if w, h, e := t.getWinSize(); e == nil && w != 0 && h != 0 {
-		t.cells.Resize(w, h)
+	if w, h, e := t.GetWinSize(); e == nil && w != 0 && h != 0 {
+		cb.Resize(w, h)
 	}
 
-	return nil
+	return t.in, t.out, nil
 
 failed:
 	if t.in != nil {
@@ -90,17 +91,12 @@ failed:
 	if t.out != nil {
 		t.out.Close()
 	}
-	return e
+	return nil, nil, e
 }
 
-func (t *tScreen) termioFini() {
-
-	signal.Stop(t.sigwinch)
-
-	<-t.indoneq
-
-	if t.out != nil && t.tiosp != nil {
-		unix.IoctlSetTermios(int(t.out.Fd()), unix.TCSETSF, t.tiosp.tio)
+func (t *termiosPrivate) Fini() {
+	if t.out != nil && t.tio != nil {
+		unix.IoctlSetTermios(int(t.out.Fd()), unix.TCSETSF, t.tio)
 		t.out.Close()
 	}
 	if t.in != nil {
@@ -108,7 +104,7 @@ func (t *tScreen) termioFini() {
 	}
 }
 
-func (t *tScreen) getWinSize() (int, int, error) {
+func (t *termiosPrivate) GetWinSize() (int, int, error) {
 	wsz, err := unix.IoctlGetWinsize(int(t.out.Fd()), unix.TIOCGWINSZ)
 	if err != nil {
 		return -1, -1, err
