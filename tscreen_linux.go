@@ -1,4 +1,4 @@
-// +build linux
+// +build !tcellhack,linux
 
 // Copyright 2019 The TCell Authors
 //

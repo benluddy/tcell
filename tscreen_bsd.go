@@ -1,4 +1,4 @@
-// +build freebsd netbsd openbsd dragonfly
+// +build !tcellhack,freebsd !tcellhack,netbsd !tcellhack,openbsd !tcellhack,dragonfly
 
 // Copyright 2019 The TCell Authors
 //

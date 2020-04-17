@@ -72,6 +72,11 @@ type tKeyCode struct {
 	mod ModMask
 }
 
+type fdWriteCloser interface {
+	io.WriteCloser
+	Fd() uintptr
+}
+
 // tScreen represents a screen backed by a terminfo implementation.
 type tScreen struct {
 	ti        *terminfo.Terminfo
@@ -79,8 +84,8 @@ type tScreen struct {
 	w         int
 	fini      bool
 	cells     CellBuffer
-	in        *os.File
-	out       *os.File
+	in        io.ReadCloser
+	out       fdWriteCloser
 	buffering bool // true if we are collecting writes to buf instead of sending directly to out
 	buf       bytes.Buffer
 	curstyle  Style

@@ -1,4 +1,4 @@
-// +build solaris
+// +build !tcellhack,solaris
 
 // Copyright 2019 The TCell Authors
 //

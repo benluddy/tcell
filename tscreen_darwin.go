@@ -1,4 +1,4 @@
-// +build darwin
+// +build !tcellhack,darwin
 
 // Copyright 2019 The TCell Authors
 //

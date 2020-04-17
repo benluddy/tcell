@@ -1,4 +1,4 @@
-// +build nacl plan9
+// +build !tcellhack,nacl !tcellhack,plan9
 
 // Copyright 2015 The TCell Authors
 //
